@@ -42,7 +42,7 @@ class FindPair:
                     state = 0
                 elif state == 1 and i < 0:
                     state = 0
-        return pd.Series(out, index=pair_z.index)
+        return pd.Series(out, index=pair_z.index).dropna()
 
     def find_sell_signal(self, pair_z: pd.Series) -> pd.Series:
         out = []
@@ -60,7 +60,7 @@ class FindPair:
                     state = 0
                 else:
                     out.append(None)
-        return pd.Series(out, index=pair_z.index)
+        return pd.Series(out, index=pair_z.index).dropna()
 
     def plot_pair(self) -> pyplot.Line2D:
         f, ax = pyplot.subplots()
@@ -69,34 +69,50 @@ class FindPair:
         ax.scatter(self.sell_signal.index, pair.sell_signal, color="red")
         return ax
 
-    def estimate_results(self):
-        pass
+    def estimate_results(self, method: str = "all"):
+        all_signals = pair.buy_signal.append(pair.sell_signal).sort_index()
+        all_prices = pair.ticker1[all_signals.index]
+        last_price = None
+        out = []
+        state = 0
+        for i in all_signals.index:
+            if all_signals[i] < -1:
+                last_price = all_prices[i]
+                state = 1
+            elif all_signals[i] > 1:
+                last_price = all_prices[i]
+                state = -1
+            elif -1 < all_signals[i] < 1 and last_price:
+                if state == 1 and method != "short":
+                    out.append((all_prices[i] / last_price))
+                if state == -1 and method != "long":
+                    out.append(2 - (all_prices[i] / last_price))
+                state = 0
 
+        return np.cumprod(out)[-1]
+
+    def time_in_market(self, method: str = "all"):
+        all_signals = pair.buy_signal.append(pair.sell_signal).sort_index()
+        out = []
+        buy_date = None
+        state = 0
+        for i in all_signals.index:
+            if all_signals[i] < -1:
+                state = 1
+                buy_date = i
+            elif all_signals[i] > 1:
+                state = -1
+                buy_date = i
+            elif -1 < all_signals[i] < 1 and buy_date:
+                if state == 1 and method != "short":
+                    out.append(i - buy_date)
+                if state == -1 and method != "long":
+                    out.append(i - buy_date)
+                state = 0
+
+        return np.cumsum(out)[-1]
 
 pair = FindPair("AMD")
 pair.plot_pair()
 
 
-buy_signals = pair.buy_signal.dropna()
-sell_signals = pair.sell_signal.dropna()
-all_signals = buy_signals.append(sell_signals).sort_index()
-all_prices = pair.ticker1[all_signals.index]
-last_price = None
-out = []
-state = 0
-for i in all_signals.index:
-    if all_signals[i] < -1:
-        last_price = all_prices[i]
-        state = 1
-    elif all_signals[i] > 1:
-        last_price = all_prices[i]
-        state = -1
-    elif -1 < all_signals[i] < 1 and last_price:
-        if state == 1:
-            out.append((all_prices[i]/last_price))
-        if state == -1:
-            #out.append(2-(all_prices[i]/last_price))
-            out.append(1)
-        state = 0
-
-np.cumprod(out)
