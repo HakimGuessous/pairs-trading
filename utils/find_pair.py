@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from matplotlib import pyplot
 
+from schemas.pair_analysis import pair_stats
 
 class FindPair:
     def __init__(self, ticker1: str, ticker2: str = "SPY", ql: int = 4):
@@ -20,6 +21,7 @@ class FindPair:
         self.pair_z = (self.pair_diff - self.pair_mean)/self.pair_std
         self.buy_signal = self.find_buy_signal(self.pair_z)
         self.sell_signal = self.find_sell_signal(self.pair_z)
+        self.model_results = self.get_model_results()
 
     def get_ticker(self, symbol: str, query_length: int) -> pd.Series:
         date = (datetime.today() - dateutil.relativedelta.relativedelta(years=query_length)).strftime("%Y-%m-%d")
@@ -65,13 +67,13 @@ class FindPair:
     def plot_pair(self) -> pyplot.Line2D:
         f, ax = pyplot.subplots()
         ax.plot(self.pair_z)
-        ax.scatter(self.buy_signal.index, pair.buy_signal, color = "green")
-        ax.scatter(self.sell_signal.index, pair.sell_signal, color="red")
+        ax.scatter(self.buy_signal.index, self.buy_signal, color = "green")
+        ax.scatter(self.sell_signal.index, self.sell_signal, color="red")
         return ax
 
     def estimate_results(self, method: str = "all"):
-        all_signals = pair.buy_signal.append(pair.sell_signal).sort_index()
-        all_prices = pair.ticker1[all_signals.index]
+        all_signals = self.buy_signal.append(self.sell_signal).sort_index()
+        all_prices = self.ticker1[all_signals.index]
         last_price = None
         out = []
         state = 0
@@ -92,7 +94,7 @@ class FindPair:
         return np.cumprod(out)[-1]
 
     def time_in_market(self, method: str = "all"):
-        all_signals = pair.buy_signal.append(pair.sell_signal).sort_index()
+        all_signals = self.buy_signal.append(self.sell_signal).sort_index()
         out = []
         buy_date = None
         state = 0
@@ -112,7 +114,25 @@ class FindPair:
 
         return np.cumsum(out)[-1]
 
-pair = FindPair("AMD")
-pair.plot_pair()
+    def get_model_results(self):
+        return pair_stats(**{
+            "ticker1_mean_std_p1": np.mean(self.ticker1_roll[self.pair_z > 1]),
+            "ticker1_mean_std_n1": np.mean(self.ticker1_roll[self.pair_z < -1]),
+            "ticker1_mean_diff": np.mean(self.ticker1_roll[self.pair_z > 1]) - np.mean(
+                self.ticker1_roll[self.pair_z < -1]),
+            "ticker2_mean_std_p1": np.mean(self.ticker2_roll[self.pair_z > 1]),
+            "ticker2_mean_std_n1": np.mean(self.ticker2_roll[self.pair_z < -1]),
+            "ticker2_mean_diff": np.mean(self.ticker2_roll[self.pair_z > 1]) - np.mean(
+                self.ticker2_roll[self.pair_z < -1]),
+            "no_long_signals": sum(i < -1 for i in self.find_buy_signal(self.pair_z)),
+            "no_short_signals": sum(i > 1 for i in self.find_buy_signal(self.pair_z)),
+            "return_all": self.estimate_results(),
+            "return_long": self.estimate_results("long"),
+            "return_short": self.estimate_results("short"),
+            "time_in_market_all": self.time_in_market(),
+            "time_in_market_long": self.time_in_market("long"),
+            "time_in_market_short": self.time_in_market("short"),
+        })
 
-
+pair_msft = FindPair("GOOG", "SPY")
+pair_msft.plot_pair()
